@@ -49,6 +49,8 @@ export interface OptionOutcome {
   payment_path: PaymentPath | null;
   /** 当期（未来 30 天内）需要支付的金额 */
   due_now: number;
+  /** 付款后账户里还剩多少可自由使用资金（尚未扣除未来 30 天必要支出） */
+  remaining_funds: number;
   /** 最低可用余额 = 可自由使用资金 - 未来30天必要支出 - 当期需支付金额 */
   projected_min_balance: number;
   /** 最低可用余额是否低于最低应急储备 */
@@ -57,6 +59,8 @@ export interface OptionOutcome {
   total_payment: number;
   /** 总息费 = 总支付 - 商品价格 */
   total_interest: number;
+  /** 分期的名义年化利率（小数，0.1832 表示 18.32%）。非分期路径为 null */
+  annual_rate: number | null;
   /** 后续每月固定负担，仅分期路径有值 */
   monthly_burden: number | null;
   /** 分期期数，仅分期路径有值 */

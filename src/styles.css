@@ -2,20 +2,25 @@
  * 融e衡 A/B 实验网页样式（移动端优先）。
  *
  * 关键约束：B 版不得通过颜色、默认按钮、警告色或图标诱导参与者选择"暂不购买"。
- * 因此本文件里没有 success / warning / danger 语义色，所有信息行、余额数值和风险说明
- * 一律使用同一套中性墨色与同一种底色。改样式时请保持这条规则。
+ * 因此本文件里没有 success / warning / danger 语义色，所有信息行、余额数值、余额条和
+ * 风险说明一律使用同一套中性墨色与同一个强调色。余额为负或低于应急储备时，
+ * 只有数字和条长会变，颜色、字重、图标都不变。改样式时请保持这条规则。
  */
 
 :root {
-  --ink: #16202e;
-  --ink-2: #4a5769;
-  --ink-3: #78849a;
-  --line: #e2e6ed;
-  --bg: #f5f6f8;
+  --ink: #141a24;
+  --ink-2: #566175;
+  --ink-3: #8b94a5;
+  --line: #e6e9ef;
+  --line-2: #f0f2f6;
+  --bg: #f4f5f8;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --accent: #2c4a7c; /* 仅用于主操作按钮与选中描边，不用于区分选项优劣 */
-  --radius: 12px;
+  --surface-2: #f7f8fa;
+  --accent: #33527f; /* 仅用于主操作、选中描边和余额条，不用于区分选项优劣 */
+  --accent-soft: #e8edf6;
+  --shadow: 0 1px 2px rgba(20, 26, 36, 0.04), 0 4px 12px rgba(20, 26, 36, 0.05);
+  --radius: 14px;
+  --radius-sm: 10px;
   --gutter: 16px;
 }
 
@@ -37,6 +42,7 @@ body {
   font-size: 15px;
   line-height: 1.6;
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {
@@ -56,49 +62,65 @@ body {
   top: 0;
   z-index: 10;
   margin: 0 calc(var(--gutter) * -1);
-  padding: 10px var(--gutter);
-  background: var(--surface-2);
-  border-bottom: 1px solid var(--line);
-  color: var(--ink-2);
+  padding: 9px var(--gutter);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 12px;
   line-height: 1.5;
+  letter-spacing: 0.01em;
 }
 
 /* ---------- 通用结构 ---------- */
 
 .screen {
-  padding-top: 20px;
+  padding-top: 22px;
+  animation: rise 0.28s ease-out both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen {
+    animation: none;
+  }
 }
 
 .screen h1 {
   margin: 0 0 6px;
-  font-size: 21px;
+  font-size: 22px;
   line-height: 1.35;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 
 .screen h2 {
-  margin: 24px 0 10px;
-  font-size: 16px;
+  margin: 26px 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .lede {
-  margin: 0 0 18px;
+  margin: 0 0 20px;
   color: var(--ink-2);
   font-size: 14px;
 }
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
   padding: 16px;
   margin-bottom: 12px;
 }
 
 .card--flat {
   background: var(--surface-2);
-  border-color: transparent;
+  box-shadow: none;
 }
 
 .muted {
@@ -106,7 +128,7 @@ body {
   font-size: 13px;
 }
 
-.stack > * + * {
+.mt-10 {
   margin-top: 10px;
 }
 
@@ -115,23 +137,127 @@ body {
 .progress {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 16px 0 12px;
+  gap: 10px;
+  margin: 18px 0 14px;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 .progress-track {
   flex: 1;
-  height: 4px;
+  height: 3px;
   border-radius: 2px;
   background: var(--line);
   overflow: hidden;
 }
 
 .progress-fill {
+  display: block;
   height: 100%;
+  border-radius: 2px;
   background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* ---------- 商品卡 ---------- */
+
+.product {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  margin-bottom: 10px;
+}
+
+.product-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.product-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.product-model {
+  margin: 3px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.product-price {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 21px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.product-installment {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 情境资金设定 ---------- */
+
+.wallet {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.wallet-label {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.wallet-value {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 可展开面板 ---------- */
+
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.2s ease;
+}
+
+.chevron[data-open='true'] {
+  transform: rotate(225deg) translate(-2px, -2px);
 }
 
 /* ---------- 列表与信息行 ---------- */
@@ -141,8 +267,8 @@ body {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-2);
   font-size: 14px;
 }
 
@@ -175,43 +301,45 @@ dl {
 }
 
 .bullets li + li {
-  margin-top: 8px;
+  margin-top: 9px;
 }
 
 /* ---------- 选项卡片 ---------- */
 
 .option {
-  display: block;
-  width: 100%;
   background: var(--surface);
-  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
+  box-shadow: var(--shadow);
+  padding: 15px 16px;
   margin-bottom: 10px;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
+  transition: box-shadow 0.18s ease;
 }
 
 .option[data-selected='true'] {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent), var(--shadow);
 }
 
 .option-head {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 11px;
+  cursor: pointer;
+}
+
+.option-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .option-mark {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  margin-top: 3px;
+  width: 19px;
+  height: 19px;
+  margin-top: 2px;
   border: 1.5px solid var(--ink-3);
   border-radius: 50%;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .option[data-selected='true'] .option-mark {
@@ -226,6 +354,7 @@ dl {
 }
 
 .option-headline {
+  display: block;
   margin-top: 2px;
   color: var(--ink-2);
   font-size: 13px;
@@ -235,33 +364,38 @@ dl {
 
 .option-detail {
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-2);
+}
+
+.detail-extra {
+  margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px dashed var(--line);
+  border-top: 1px solid var(--line-2);
 }
 
 .detail-toggle {
-  margin-top: 10px;
+  margin-top: 11px;
   padding: 0;
   background: none;
   border: none;
   color: var(--accent);
   font: inherit;
   font-size: 13px;
-  text-decoration: underline;
   cursor: pointer;
 }
 
 .sub-choice {
   display: flex;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .sub-choice button {
   flex: 1;
-  padding: 8px;
+  padding: 9px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink-2);
   font: inherit;
@@ -272,17 +406,99 @@ dl {
 .sub-choice button[data-selected='true'] {
   border-color: var(--accent);
   color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ---------- 选定后的结果摘要 ---------- */
+
+.summary {
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: rise 0.2s ease-out both;
+}
+
+.summary-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.summary-line + .summary-line {
+  margin-top: 7px;
+}
+
+.summary-label {
+  color: var(--ink-2);
+}
+
+.summary-choice {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.summary-line--major {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+}
+
+.summary-line--major .summary-amount {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.summary-amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-note {
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* 余额条：所有情况同色，只有长度和刻度位置在变 */
+.bar {
+  position: relative;
+  height: 6px;
+  margin: 10px 0 12px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.bar-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--ink-3);
+  transform: translateX(-1px);
 }
 
 /* ---------- 表单 ---------- */
 
 .field {
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .field > legend {
   padding: 0;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -300,7 +516,7 @@ fieldset {
 }
 
 .chip {
-  padding: 9px 14px;
+  padding: 9px 15px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
@@ -308,26 +524,36 @@ fieldset {
   font: inherit;
   font-size: 14px;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .chip[data-selected='true'] {
   border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  font-weight: 500;
 }
 
 .code-input {
   width: 100%;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  font-size: 18px;
-  letter-spacing: 0.12em;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
   text-align: center;
   text-transform: uppercase;
+  box-shadow: var(--shadow);
+}
+
+.code-input::placeholder {
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
 }
 
 .code-input:focus {
@@ -336,7 +562,10 @@ fieldset {
 }
 
 .form-note {
-  margin-top: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
   color: var(--ink-2);
   font-size: 13px;
 }
@@ -346,7 +575,7 @@ fieldset {
 .btn {
   display: block;
   width: 100%;
-  padding: 14px;
+  padding: 15px;
   border: none;
   border-radius: var(--radius);
   background: var(--accent);
@@ -355,10 +584,15 @@ fieldset {
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.08s ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -372,41 +606,54 @@ fieldset {
 .actions {
   position: sticky;
   bottom: 0;
-  margin: 20px calc(var(--gutter) * -1) 0;
-  padding: 12px var(--gutter) calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(to bottom, rgba(245, 246, 248, 0), var(--bg) 24px);
+  margin: 22px calc(var(--gutter) * -1) 0;
+  padding: 14px var(--gutter) calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(to bottom, rgba(244, 245, 248, 0), var(--bg) 22px);
+}
+
+.actions-note {
+  margin: 9px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: center;
 }
 
 /* ---------- 深色模式 ---------- */
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --ink: #e8ecf3;
-    --ink-2: #aab4c4;
-    --ink-3: #7e8899;
-    --line: #2a323f;
-    --bg: #11151c;
-    --surface: #1a1f28;
-    --surface-2: #222835;
-    --accent: #7ea6e0;
+    --ink: #e9edf4;
+    --ink-2: #a8b2c2;
+    --ink-3: #798395;
+    --line: #2b3340;
+    --line-2: #232a35;
+    --bg: #0f131a;
+    --surface: #191e27;
+    --surface-2: #212733;
+    --accent: #89aee3;
+    --accent-soft: #1f2a3c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.24);
   }
 
   :root:not([data-theme='light']) .btn {
-    color: #11151c;
+    color: #0f131a;
   }
 
   :root:not([data-theme='light']) .actions {
-    background: linear-gradient(to bottom, rgba(17, 21, 28, 0), var(--bg) 24px);
+    background: linear-gradient(to bottom, rgba(15, 19, 26, 0), var(--bg) 22px);
   }
 }
 
 :root[data-theme='dark'] {
-  --ink: #e8ecf3;
-  --ink-2: #aab4c4;
-  --ink-3: #7e8899;
-  --line: #2a323f;
-  --bg: #11151c;
-  --surface: #1a1f28;
-  --surface-2: #222835;
-  --accent: #7ea6e0;
+  --ink: #e9edf4;
+  --ink-2: #a8b2c2;
+  --ink-3: #798395;
+  --line: #2b3340;
+  --line-2: #232a35;
+  --bg: #0f131a;
+  --surface: #191e27;
+  --surface-2: #212733;
+  --accent: #89aee3;
+  --accent-soft: #1f2a3c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.24);
 }

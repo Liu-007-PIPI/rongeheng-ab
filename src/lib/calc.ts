@@ -42,6 +42,40 @@ export function monthlySurplus(s: ScenarioConfig): number {
   return round2(s.available_funds - s.necessary_expense_30d - s.emergency_reserve);
 }
 
+/**
+ * 等额本息分期的实际月利率。
+ *
+ * 情境参数里的"每期金额"和"分期总支付"本身就含利息（例如电脑 6000 元分 12 期共还 6600 元），
+ * 但"总息费 600 元"这个说法会让人低估成本——分期是逐月还本的，真实资金占用远小于本金全额。
+ * 这里用二分法反解下面这个等额本息方程，得到每月实际利率：
+ *
+ *   本金 = 每期金额 × (1 - (1 + i)^-期数) / i
+ *
+ * 再按名义年化口径换算 APR = i × 12，与消费金融产品的披露口径一致。
+ * 无解或参数不合法（总还款不大于本金）时返回 null。
+ */
+export function monthlyRate(principal: number, payment: number, periods: number): number | null {
+  if (principal <= 0 || payment <= 0 || periods <= 0) return null;
+  if (payment * periods <= principal) return null; // 无息或参数异常
+
+  const pv = (i: number) => (payment * (1 - Math.pow(1 + i, -periods))) / i;
+
+  let lo = 1e-9;
+  let hi = 1; // 月息 100%，足以覆盖任何真实消费分期
+  for (let k = 0; k < 200; k += 1) {
+    const mid = (lo + hi) / 2;
+    if (pv(mid) > principal) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+/** 名义年化利率（APR）。返回小数，例如 0.1832 表示 18.32%。 */
+export function annualRate(principal: number, payment: number, periods: number): number | null {
+  const i = monthlyRate(principal, payment, periods);
+  return i === null ? null : i * 12;
+}
+
 /** 由"当期需支付金额"得到最低可用余额。 */
 export function projectedMinBalance(s: ScenarioConfig, dueNow: number): number {
   return round2(s.available_funds - s.necessary_expense_30d - dueNow);
@@ -115,14 +149,25 @@ export function evaluateOption(
 
   const projected = projectedMinBalance(s, due_now);
 
+  // 付款后手里还剩多少钱（尚未扣除未来 30 天的必要支出）
+  const remaining_funds = round2(s.available_funds - due_now);
+
+  // 只有分期路径才有利率可言
+  const apr =
+    payment_path === 'installment' && monthly_burden !== null && installment_term !== null
+      ? annualRate(price_of_item, monthly_burden, installment_term)
+      : null;
+
   return {
     choice,
     payment_path,
     due_now: round2(due_now),
+    remaining_funds,
     projected_min_balance: projected,
     high_risk_choice: isHighRisk(s, projected),
     total_payment: round2(total_payment),
     total_interest: round2(total_payment - price_of_item),
+    annual_rate: apr,
     monthly_burden,
     installment_term,
     months_to_save,

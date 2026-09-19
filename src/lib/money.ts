@@ -13,3 +13,8 @@ export function formatMoney(value: number): string {
     : abs.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${v < 0 ? '-' : ''}${text} 元`;
 }
+
+/** 百分比展示：传入小数，0.1832 → "18.32%"。 */
+export function formatPercent(value: number, digits = 2): string {
+  return `${(value * 100).toFixed(digits)}%`;
+}

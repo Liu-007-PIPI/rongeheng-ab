@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { OptionCard } from '../components/OptionCard';
 import { InfoRow, Progress, Screen } from '../components/ui';
 import { CHOICE_LABELS, CHOICE_ORDER, evaluateOption, monthlySurplus } from '../lib/calc';
-import { formatMoney } from '../lib/money';
+import { formatMoney, formatPercent } from '../lib/money';
 import type { FinalChoice, PaymentPath, ScenarioConfig, Variant } from '../lib/types';
 import { useExperiment } from '../state/experiment';
 
@@ -121,28 +121,30 @@ export function ScenarioScreen({
     }
   }
 
+  const selected = choice ? outcomeOf(choice) : null;
+
   return (
     <Screen title={scenario.title}>
       <Progress current={position} total={total} />
 
       {/* 商品信息：A 版与 B 版完全一致 */}
-      <div className="card">
-        <dl>
-          <InfoRow label="商品" value={scenario.product_name} />
-          <InfoRow label="型号" value={scenario.product_model} />
-          <InfoRow label="当前售价" value={formatMoney(scenario.base_price)} />
-          <InfoRow
-            label="分期"
-            value={`${scenario.installment_periods} 期 × ${formatMoney(scenario.installment_payment)}`}
-          />
-        </dl>
+      <div className="product">
+        <div className="product-top">
+          <div>
+            <p className="product-name">{scenario.product_name}</p>
+            <p className="product-model">{scenario.product_model}</p>
+          </div>
+          <p className="product-price">{formatMoney(scenario.base_price)}</p>
+        </div>
+        <p className="product-installment">
+          分期 {scenario.installment_periods} 期 · 每期 {formatMoney(scenario.installment_payment)}
+        </p>
       </div>
 
       {/* 情境设定：两版都给出可自由使用资金，否则无法做任何预算判断 */}
-      <div className="card card--flat">
-        <p style={{ margin: 0, fontSize: 14 }}>
-          假设你现在可自由支配 <strong>{formatMoney(scenario.available_funds)}</strong>。
-        </p>
+      <div className="wallet">
+        <span className="wallet-label">你现在可自由支配</span>
+        <span className="wallet-value">{formatMoney(scenario.available_funds)}</span>
       </div>
 
       {/* 现金流模块：仅 B 版 */}
@@ -150,15 +152,15 @@ export function ScenarioScreen({
         <div className="card">
           <button
             type="button"
-            className="detail-toggle"
-            style={{ marginTop: 0 }}
+            className="panel-toggle"
             onClick={toggleCashflow}
             aria-expanded={cashflowOpen}
           >
-            {cashflowOpen ? '收起你的资金情况' : '查看你的资金情况'}
+            <span>{cashflowOpen ? '收起你的资金情况' : '查看你的资金情况'}</span>
+            <span className="chevron" data-open={cashflowOpen} aria-hidden="true" />
           </button>
           {cashflowOpen ? (
-            <dl style={{ marginTop: 10 }}>
+            <dl className="mt-10">
               <InfoRow label="当前可自由使用资金" value={formatMoney(scenario.available_funds)} />
               <InfoRow label="未来 30 天必要支出" value={formatMoney(scenario.necessary_expense_30d)} />
               <InfoRow label="你设定的最低应急储备" value={formatMoney(scenario.emergency_reserve)} />
@@ -196,14 +198,69 @@ export function ScenarioScreen({
       {submitError ? <p className="form-note">{submitError}</p> : null}
 
       <div className="actions">
+        {/* 选定后的结果摘要。A 版只回显选择，B 版同时给出剩余可用资金。 */}
+        {selected ? (
+          <div className="summary">
+            <div className="summary-line">
+              <span className="summary-label">你当前的选择</span>
+              <span className="summary-choice">{CHOICE_LABELS[selected.choice]}</span>
+            </div>
+            {isB ? (
+              <>
+                <div className="summary-line summary-line--major">
+                  <span className="summary-label">付款后剩余可用资金</span>
+                  <span className="summary-amount">{formatMoney(selected.remaining_funds)}</span>
+                </div>
+                <BalanceBar
+                  balance={selected.projected_min_balance}
+                  reserve={scenario.emergency_reserve}
+                  ceiling={scenario.available_funds}
+                />
+                <div className="summary-line">
+                  <span className="summary-label">再扣除未来 30 天必要支出后</span>
+                  <span className="summary-amount">
+                    {formatMoney(selected.projected_min_balance)}
+                  </span>
+                </div>
+                <p className="summary-note">
+                  你设定的最低应急储备是 {formatMoney(scenario.emergency_reserve)}，
+                  {selected.high_risk_choice ? '该路径下低于这个数' : '该路径下不低于这个数'}。
+                </p>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
         <button type="button" className="btn" disabled={!choice || busy} onClick={handleSubmit}>
           {busy ? '提交中…' : '提交这个情境的选择'}
         </button>
-        <p className="muted" style={{ marginTop: 8, textAlign: 'center' }}>
-          每个情境只能提交一次，提交后无法返回修改。
-        </p>
+        <p className="actions-note">每个情境只能提交一次，提交后无法返回修改。</p>
       </div>
     </Screen>
+  );
+}
+
+/**
+ * 余额条。用同一种中性色画所有情况，长度表示金额大小，虚线标出应急储备位置。
+ * 低于储备时不换色、不变红、不加图标——只是刻度线落在了左边。
+ */
+function BalanceBar({
+  balance,
+  reserve,
+  ceiling,
+}: {
+  balance: number;
+  reserve: number;
+  ceiling: number;
+}) {
+  const span = Math.max(ceiling, reserve, balance, 1);
+  const pct = Math.max(0, Math.min(100, (balance / span) * 100));
+  const reservePct = Math.max(0, Math.min(100, (reserve / span) * 100));
+  return (
+    <div className="bar" aria-hidden="true">
+      <div className="bar-fill" style={{ width: `${pct}%` }} />
+      <div className="bar-mark" style={{ left: `${reservePct}%` }} />
+    </div>
   );
 }
 
@@ -293,9 +350,10 @@ function OptionDetail({
       ) : null}
 
       {isB ? (
-        <dl style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--line)' }}>
+        <dl className="detail-extra">
+          <InfoRow label="付款后剩余可用资金" value={formatMoney(outcome.remaining_funds)} />
           <InfoRow
-            label="付款后未来 30 天最低可用余额"
+            label="再扣除必要支出后的最低余额"
             value={formatMoney(outcome.projected_min_balance)}
           />
           <InfoRow
@@ -316,7 +374,10 @@ function OptionDetail({
             <InfoRow label="该路径总支付" value={formatMoney(outcome.total_payment)} />
           ) : null}
           {outcome.total_interest > 0 ? (
-            <InfoRow label="其中总息费" value={formatMoney(outcome.total_interest)} />
+            <InfoRow label="其中利息与手续费" value={formatMoney(outcome.total_interest)} />
+          ) : null}
+          {outcome.annual_rate !== null ? (
+            <InfoRow label="折合年化利率" value={formatPercent(outcome.annual_rate)} />
           ) : null}
           {choice === 'save_then_buy' ? (
             <InfoRow

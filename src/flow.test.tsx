@@ -164,3 +164,47 @@ describe('完成页不透露研究设计', () => {
     }
   });
 });
+
+describe('选定后的结果摘要', () => {
+  it('B 版选中后给出付款后剩余可用资金和年化利率', async () => {
+    const user = await enterExperiment('B004');
+
+    const group = await screen.findByRole('radiogroup', { name: '购买方式' });
+    await user.click(within(group).getAllByRole('radio')[1]); // 分期
+
+    // 选中即出现剩余可用资金，不需要展开
+    await screen.findByText('付款后剩余可用资金');
+    expect(screen.getByText('你当前的选择')).toBeTruthy();
+
+    // 展开分期详情能看到折合年化利率，且是两位小数的百分数
+    await user.click(screen.getAllByRole('button', { name: '查看详情' })[1]);
+    const apr = await screen.findByText('折合年化利率');
+    const value = apr.parentElement?.querySelector('dd')?.textContent ?? '';
+    expect(value).toMatch(/^\d+\.\d{2}%$/);
+  });
+
+  it('A 版选中后只回显选择，不出现任何余额或利率', async () => {
+    const user = await enterExperiment('A005');
+
+    const group = await screen.findByRole('radiogroup', { name: '购买方式' });
+    await user.click(within(group).getAllByRole('radio')[1]);
+    await screen.findByText('你当前的选择');
+
+    // 展开每一个选项的详情，A 版也不能出现 B 版独有的信息
+    for (const btn of screen.getAllByRole('button', { name: '查看详情' })) {
+      await user.click(btn);
+    }
+
+    const text = document.body.textContent ?? '';
+    for (const banned of [
+      '付款后剩余可用资金',
+      '最低余额',
+      '折合年化利率',
+      '应急储备',
+      '必要支出',
+      '总支付',
+    ]) {
+      expect(text.includes(banned)).toBe(false);
+    }
+  });
+});

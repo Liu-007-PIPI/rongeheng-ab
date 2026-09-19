@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { SCENARIOS } from '../config/scenarios';
 import { evaluateOption, monthlySurplus } from './calc';
+import { round2 } from './money';
 import type { FinalChoice, PaymentPath, ScenarioId } from './types';
 
 interface Expectation {
@@ -103,5 +104,69 @@ describe('A/B 共用同一份情境参数', () => {
   it('配置里不存在按版本区分的字段', () => {
     const keys = Object.keys(SCENARIOS.laptop);
     expect(keys.some((k) => /variant|version_a|version_b/i.test(k))).toBe(false);
+  });
+});
+
+describe('分期的实际年化利率', () => {
+  // 期望值由等额本息方程 本金 = 每期 × (1-(1+i)^-n)/i 反解得到，保留两位百分数
+  const EXPECTED: Record<ScenarioId, number> = {
+    laptop: 17.97,
+    phone: 21.63,
+    course: 13.70,
+  };
+
+  for (const id of ['laptop', 'phone', 'course'] as ScenarioId[]) {
+    it(`${id} 的年化利率`, () => {
+      const apr = evaluateOption(SCENARIOS[id], 'installment').annual_rate;
+      expect(apr).not.toBeNull();
+      expect(Number((apr! * 100).toFixed(2))).toBeCloseTo(EXPECTED[id], 2);
+    });
+  }
+
+  it('替代项分期沿用同一费率，年化与原商品一致', () => {
+    for (const id of ['laptop', 'phone', 'course'] as ScenarioId[]) {
+      const main = evaluateOption(SCENARIOS[id], 'installment').annual_rate!;
+      const alt = evaluateOption(SCENARIOS[id], 'alternative', 'installment').annual_rate!;
+      expect(alt * 100).toBeCloseTo(main * 100, 1);
+    }
+  });
+
+  it('非分期路径没有利率', () => {
+    expect(evaluateOption(SCENARIOS.laptop, 'full_payment').annual_rate).toBeNull();
+    expect(evaluateOption(SCENARIOS.laptop, 'save_then_buy').annual_rate).toBeNull();
+    expect(evaluateOption(SCENARIOS.laptop, 'not_now').annual_rate).toBeNull();
+    expect(evaluateOption(SCENARIOS.laptop, 'alternative', 'full_payment').annual_rate).toBeNull();
+  });
+
+  it('年化利率明显高于"总息费÷本金"给人的印象', () => {
+    // 电脑：总息费 600 / 本金 6000 = 10%，但逐月还本后真实年化接近 18%
+    const o = evaluateOption(SCENARIOS.laptop, 'installment');
+    const naive = o.total_interest / SCENARIOS.laptop.base_price;
+    expect(naive).toBeCloseTo(0.1, 4);
+    expect(o.annual_rate!).toBeGreaterThan(naive * 1.7);
+  });
+});
+
+describe('付款后剩余可用资金', () => {
+  // 剩余可用资金 = 当前可自由使用资金 - 当期需支付金额（尚未扣除必要支出）
+  it('三个情境的各路径', () => {
+    expect(evaluateOption(SCENARIOS.laptop, 'full_payment').remaining_funds).toBe(-1000);
+    expect(evaluateOption(SCENARIOS.laptop, 'installment').remaining_funds).toBe(4450);
+    expect(evaluateOption(SCENARIOS.laptop, 'not_now').remaining_funds).toBe(5000);
+
+    expect(evaluateOption(SCENARIOS.phone, 'full_payment').remaining_funds).toBe(1201);
+    expect(evaluateOption(SCENARIOS.phone, 'installment').remaining_funds).toBe(5733);
+
+    expect(evaluateOption(SCENARIOS.course, 'full_payment').remaining_funds).toBe(801);
+    expect(evaluateOption(SCENARIOS.course, 'installment').remaining_funds).toBe(3280);
+    expect(evaluateOption(SCENARIOS.course, 'alternative', 'installment').remaining_funds).toBe(3453.39);
+  });
+
+  it('剩余可用资金减去必要支出就是最低可用余额', () => {
+    for (const id of ['laptop', 'phone', 'course'] as ScenarioId[]) {
+      const s = SCENARIOS[id];
+      const o = evaluateOption(s, 'installment');
+      expect(round2(o.remaining_funds - s.necessary_expense_30d)).toBe(o.projected_min_balance);
+    }
   });
 });
