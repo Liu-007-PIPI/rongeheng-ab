@@ -38,13 +38,48 @@ export function Progress({ current, total }: { current: number; total: number })
   );
 }
 
-/** 键值信息行。所有数值使用同一种中性样式，不按好坏着色。 */
-export function InfoRow({ label, value }: { label: ReactNode; value: ReactNode }) {
+/**
+ * 指标色调。按【信息类型】分配，不按【选择好不好】分配——
+ * 同一个指标换任何选项看都是同一个颜色，详见 styles.css 顶部的上色原则。
+ *
+ *   plain    默认主文字
+ *   accent   青绿，用于剩余可用资金
+ *   cost     琥珀，用于利率、利息与手续费
+ *   reserve  绿色，用于应急储备这条固定参照线
+ *   risk/safe  判定结果，默认不着色（由 --verdict-* 控制）
+ */
+export type StatTone = 'plain' | 'accent' | 'cost' | 'reserve' | 'risk' | 'safe';
+
+/**
+ * 标签 + 数值。默认左右排布；hero 为纵向排布的主指标，数字明显放大。
+ * 标签与数值是相邻兄弟节点，测试可以用 label.nextElementSibling 取值。
+ */
+export function Stat({
+  label,
+  value,
+  tone = 'plain',
+  hero = false,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  tone?: StatTone;
+  hero?: boolean;
+}) {
   return (
-    <div className="info-row">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+    <div className={hero ? 'stat stat--hero' : 'stat'} data-tone={tone}>
+      <span className="stat-label">{label}</span>
+      <span className="stat-value">{value}</span>
     </div>
+  );
+}
+
+/** 信息分区。用卡片层级和留白分组，而不是靠横向分割线。 */
+export function Zone({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="zone">
+      <h3 className="zone-title">{title}</h3>
+      {children}
+    </section>
   );
 }
 

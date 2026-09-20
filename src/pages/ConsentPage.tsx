@@ -21,12 +21,11 @@ export function ConsentPage() {
       </div>
 
       <div className="card card--flat">
-        <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14 }}>
+        <label className="consent-check">
           <input
             type="checkbox"
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
-            style={{ marginTop: 3, width: 18, height: 18, flex: '0 0 auto' }}
           />
           <span>我已阅读并理解以上说明，自愿参加本次实验。</span>
         </label>

@@ -172,15 +172,18 @@ describe('选定后的结果摘要', () => {
     const group = await screen.findByRole('radiogroup', { name: '购买方式' });
     await user.click(within(group).getAllByRole('radio')[1]); // 分期
 
-    // 选中即出现剩余可用资金，不需要展开
-    await screen.findByText('付款后剩余可用资金');
-    expect(screen.getByText('你当前的选择')).toBeTruthy();
+    // 选中即在摘要区出现剩余可用资金，不需要展开
+    const summary = await screen.findByRole('region', { name: '当前选择的测算结果' });
+    expect(within(summary).getByText('你当前的选择')).toBeTruthy();
+    expect(within(summary).getByText('付款后剩余可用资金')).toBeTruthy();
+    // 余额安全与分期成本是两个独立分区，不是一条条平铺
+    expect(within(summary).getByText('余额安全')).toBeTruthy();
 
     // 展开分期详情能看到折合年化利率，且是两位小数的百分数
     await user.click(screen.getAllByRole('button', { name: '查看详情' })[1]);
-    const apr = await screen.findByText('折合年化利率');
-    const value = apr.parentElement?.querySelector('dd')?.textContent ?? '';
-    expect(value).toMatch(/^\d+\.\d{2}%$/);
+    const apr = screen.getAllByText('折合年化利率')[0];
+    expect(apr.nextElementSibling?.textContent ?? '').toMatch(/^\d+\.\d{2}%$/);
+    expect(screen.getAllByText('分期成本').length).toBeGreaterThan(0);
   });
 
   it('A 版选中后只回显选择，不出现任何余额或利率', async () => {
