@@ -13,7 +13,7 @@ const MESSAGES: Record<Exclude<CodeError, null>, string> = {
 };
 
 export function CodePage() {
-  const { submitCode, codeError, busy } = useExperiment();
+  const { submitCode, codeError, errorMessage, busy } = useExperiment();
   const [value, setValue] = useState('');
 
   return (
@@ -33,7 +33,17 @@ export function CodePage() {
         aria-label="匿名码"
       />
 
-      {codeError ? <p className="form-note">{MESSAGES[codeError]}</p> : null}
+      {codeError ? (
+        <p className="form-note">
+          {MESSAGES[codeError]}
+          {errorMessage ? (
+            <>
+              <br />
+              <code>{errorMessage}</code>
+            </>
+          ) : null}
+        </p>
+      ) : null}
 
       <p className="muted" style={{ marginTop: 14 }}>
         中途刷新或不小心关掉页面，用同一个匿名码可以接着上次的进度继续，不会重新开始。

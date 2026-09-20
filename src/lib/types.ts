@@ -143,3 +143,17 @@ export interface SessionRecord {
   completion_status: 'in_progress' | 'completed' | 'withdrawn';
   app_version: string;
 }
+
+/**
+ * 撤回处理记录（交接文档 7.7）。
+ * 参与者及其答案会被物理删除，这里只保留匿名码与处理时间，不保留任何实验答案。
+ */
+export interface WithdrawalRecord {
+  id: string;
+  access_code_label: string;
+  requested_at: string;
+  processed_at: string;
+  processed_by: string;
+  /** 只写处理状态，不写参与者身份 */
+  note: string;
+}

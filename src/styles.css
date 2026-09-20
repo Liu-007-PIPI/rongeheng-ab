@@ -706,3 +706,334 @@ fieldset {
   margin: 3px 0 0;
   accent-color: var(--accent);
 }
+
+/* ══════════════════ 管理员后台 ══════════════════ */
+/* 沿用同一套 token。后台是内部工具，信息密度高于参与者端，但配色保持一致。 */
+
+.admin,
+.admin-login {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px var(--gutter) 60px;
+}
+
+.admin-login {
+  max-width: 420px;
+}
+
+.admin-login h1,
+.admin-header h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.admin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.admin-signout {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 9px 18px;
+  font-size: 14px;
+}
+
+/* 警示条：这里用柔和红是对开发者说的，参与者永远看不到，不影响实验 */
+.admin-warning {
+  margin: 16px 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(229, 115, 115, 0.4);
+  border-radius: var(--radius-sm);
+  background: rgba(229, 115, 115, 0.08);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.admin-warning strong {
+  color: var(--risk);
+}
+
+.admin-note {
+  margin: 12px 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.admin-note code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--card-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.admin-note a {
+  color: var(--accent);
+}
+
+.admin-subtitle {
+  margin: 32px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+/* ---------- 标签页 ---------- */
+
+.admin-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 20px 0 4px;
+  padding: 4px;
+  border-radius: var(--radius-xs);
+  background: var(--card);
+}
+
+.admin-tabs button {
+  flex: 1 1 auto;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.admin-tabs button[data-selected='true'] {
+  background: var(--accent-wash);
+  border-color: var(--accent-edge);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.admin-body {
+  padding-top: 20px;
+}
+
+/* ---------- 总览数字块 ---------- */
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.admin-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.admin-tile-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
+.admin-tile-value {
+  font-size: 26px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.admin-callout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 20px;
+  padding: 18px 20px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+}
+
+.admin-callout .admin-tile-value {
+  color: var(--accent);
+}
+
+/* ---------- 筛选 ---------- */
+
+.admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.admin-filters .segmented {
+  margin-top: 0;
+  background: var(--card);
+}
+
+.admin-checkbox,
+.admin-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.admin-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.admin-select select {
+  padding: 8px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* ---------- 表格 ---------- */
+
+.admin-scroll {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 11px 14px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--divider);
+}
+
+.admin-table th {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  background: var(--card-2);
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover td {
+  background: var(--card);
+}
+
+.admin-table td:first-child {
+  color: var(--text-secondary);
+}
+
+/* ---------- 导出与撤回 ---------- */
+
+.admin-export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-export .btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: auto;
+  padding: 11px 16px;
+  font-size: 13px;
+}
+
+.admin-count {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.admin-withdraw {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.admin-input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+}
+
+.admin-input:focus {
+  outline: none;
+  border-color: var(--accent-edge);
+}
+
+.admin-withdraw .btn {
+  width: auto;
+  padding: 11px 20px;
+  font-size: 14px;
+}
+
+.admin-confirm {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(229, 115, 115, 0.4);
+  border-radius: var(--radius-sm);
+  background: rgba(229, 115, 115, 0.08);
+  font-size: 13px;
+}
+
+.admin-confirm p {
+  margin: 0 0 12px;
+}
+
+.admin-confirm-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.admin-confirm-actions .btn {
+  flex: 1;
+  padding: 10px;
+  font-size: 13px;
+}
+
+.admin-login .btn {
+  margin-top: 12px;
+}
+
+.admin-login .admin-input {
+  margin-top: 4px;
+}

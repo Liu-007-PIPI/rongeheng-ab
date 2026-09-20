@@ -108,6 +108,8 @@ export function ScenarioScreen({
         final_choice: choice,
         selected_payment_path: outcome.payment_path,
         installment_term: outcome.installment_term,
+        // 服务端用 due_now 按同一条公式重算余额与风险标签，不直接采信前端结果
+        due_now: outcome.due_now,
         projected_min_balance: outcome.projected_min_balance,
         high_risk_choice: outcome.high_risk_choice,
         viewed_cashflow: isB ? viewedCashflow : false,
@@ -115,7 +117,6 @@ export function ScenarioScreen({
         clicked_lower_price: clickedLowerPrice,
         changed_choice: selectionCount > 1,
         decision_time_ms: Date.now() - shownAt.current,
-        submitted_at: new Date().toISOString(),
       });
       logEvent('submit_decision', scenario.scenario_id, { option: choice });
     } catch {

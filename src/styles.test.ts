@@ -20,11 +20,20 @@ describe('防诱导上色规则', () => {
     expect(css).toMatch(/--verdict-safe-ink:\s*var\(--text-primary\)/);
   });
 
-  it('风险色只在 token 定义处出现，没有被直接写进任何选择器', () => {
+  it('风险色只定义一次', () => {
     const declarations = css.match(/^\s*--risk:\s*#e57373;/gm) ?? [];
     expect(declarations).toHaveLength(1);
-    // 除 token 定义外，不应有 color: var(--risk) 之类的直接使用
-    expect(css).not.toMatch(/:\s*var\(--risk\)\s*;/);
+  });
+
+  it('参与者端任何选择器都不使用风险色，只有管理端可以', () => {
+    // 逐条规则检查：用到 var(--risk) 的，选择器必须是 .admin 开头的后台样式。
+    // 后台是内部工具，参与者永远看不到，在那里标红不影响实验刺激。
+    const offenders: string[] = [];
+    for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (!body.includes('var(--risk)')) continue;
+      if (!selector.includes('.admin')) offenders.push(selector.trim());
+    }
+    expect(offenders).toEqual([]);
   });
 
   it('选项卡片没有按选项写死的差异化配色', () => {

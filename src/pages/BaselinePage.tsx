@@ -5,7 +5,7 @@ import { useExperiment } from '../state/experiment';
 import type { BaselineAnswers } from '../lib/types';
 
 export function BaselinePage() {
-  const { submitBaseline, busy } = useExperiment();
+  const { submitBaseline, busy, errorMessage } = useExperiment();
   const [answers, setAnswers] = useState<BaselineAnswers>(EMPTY_BASELINE);
 
   function valueOf(key: keyof BaselineAnswers): string {
@@ -39,6 +39,14 @@ export function BaselinePage() {
           />
         </fieldset>
       ))}
+
+      {errorMessage ? (
+        <p className="form-note">
+          没能开始实验，请稍后重试。如果一直这样，把下面这行发给项目负责人：
+          <br />
+          <code>{errorMessage}</code>
+        </p>
+      ) : null}
 
       <div className="actions">
         <button
