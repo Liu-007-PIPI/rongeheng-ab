@@ -9,8 +9,8 @@ export function ConsentPage() {
 
   return (
     <Screen
-      title="知情同意"
-      lede="请先阅读以下说明。只有在你同意之后，才会进入实验。"
+      title="开始之前，先说清楚几件事"
+      lede="看完下面几条，你同意了我们才开始。"
     >
       <div className="card">
         <ul className="bullets">
@@ -27,11 +27,11 @@ export function ConsentPage() {
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
           />
-          <span>我已阅读并理解以上说明，自愿参加本次实验。</span>
+          <span>上面几条我看过了，也看懂了，我愿意参加。</span>
         </label>
       </div>
 
-      <p className="muted">知情同意版本：{CONSENT_VERSION}</p>
+      <p className="muted">说明版本：{CONSENT_VERSION}</p>
 
       <div className="actions">
         <button type="button" className="btn" disabled={!agreed} onClick={agreeConsent}>

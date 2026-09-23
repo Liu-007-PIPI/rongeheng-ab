@@ -17,6 +17,8 @@
  * 一次性运行的分析脚本（交接文档 10.3），不放进采集期间可随时刷新的后台，
  * 以免边采边看、提前停止或挑口径。
  */
+import { CURRENT_ROUND, roundOfAppVersion } from '../config/experiment';
+import type { RoundKey } from '../config/experiment';
 import type {
   CodeType,
   DecisionRecord,
@@ -72,9 +74,19 @@ export interface AnalysisFilter {
   codeType: CodeType | 'all';
   /** 只保留完整做完三个情境的会话 */
   completedOnly: boolean;
+  /**
+   * 采集轮次。默认只看当前轮。
+   * 两轮的情境参数不同，混在一起算出来的比例没有任何意义，
+   * 所以这一项不是"方便看看"，而是防止误读的默认防线。
+   */
+  round: RoundKey | 'all';
 }
 
-export const DEFAULT_FILTER: AnalysisFilter = { codeType: 'formal', completedOnly: true };
+export const DEFAULT_FILTER: AnalysisFilter = {
+  codeType: 'formal',
+  completedOnly: true,
+  round: CURRENT_ROUND,
+};
 
 /** 一名参与者在分析中的完整视图。 */
 export interface ParticipantView {
@@ -83,6 +95,8 @@ export interface ParticipantView {
   decisions: DecisionRecord[];
   withdrawn: boolean;
   completed: boolean;
+  /** 该会话属于哪一轮。没有会话记录时归入 other。 */
+  round: RoundKey;
 }
 
 export function buildViews(snapshot: DataSnapshot): ParticipantView[] {
@@ -101,6 +115,7 @@ export function buildViews(snapshot: DataSnapshot): ParticipantView[] {
       completed:
         session?.completion_status === 'completed' &&
         decisions.length === SCENARIOS_PER_PARTICIPANT,
+      round: roundOfAppVersion(session?.app_version),
     };
   });
 }
@@ -112,6 +127,7 @@ export function buildViews(snapshot: DataSnapshot): ParticipantView[] {
 export function applyFilter(views: ParticipantView[], filter: AnalysisFilter): ParticipantView[] {
   return views.filter((v) => {
     if (v.withdrawn) return false;
+    if (filter.round !== 'all' && v.round !== filter.round) return false;
     if (filter.codeType !== 'all' && v.participant.code_type !== filter.codeType) return false;
     if (filter.completedOnly && !v.completed) return false;
     return true;
@@ -132,10 +148,21 @@ export interface Overview {
   pilot_completed: number;
   formal_started: number;
   formal_completed: number;
+  /** 被轮次条件挡在总览之外的人数，单独显示，避免"库里的人凭空消失" */
+  other_rounds: number;
 }
 
-export function computeOverview(snapshot: DataSnapshot, issuedCodes: number): Overview {
-  const views = buildViews(snapshot);
+/**
+ * 总览。round 默认只统计当前轮——
+ * 招募期间最常看的就是这一屏，把上一轮的人数混进来会直接把进度看错。
+ */
+export function computeOverview(
+  snapshot: DataSnapshot,
+  issuedCodes: number,
+  round: RoundKey | 'all' = CURRENT_ROUND,
+): Overview {
+  const all = buildViews(snapshot);
+  const views = round === 'all' ? all : all.filter((v) => v.round === round);
   const active = views.filter((v) => !v.withdrawn);
   const completed = active.filter((v) => v.completed);
   const byType = (t: CodeType, list: ParticipantView[]) =>
@@ -153,6 +180,7 @@ export function computeOverview(snapshot: DataSnapshot, issuedCodes: number): Ov
     pilot_completed: byType('pilot', completed),
     formal_started: byType('formal', active),
     formal_completed: byType('formal', completed),
+    other_rounds: all.length - views.length,
   };
 }
 
@@ -176,23 +204,43 @@ export interface CohortMetrics {
   any_high_risk_n: number;
   any_high_risk_ratio: number | null;
 
+  /* 第二轮：完整还款期口径的同一组指标。两套口径并列报告，不可互相替代 */
+  mean_high_risk_term_ratio: number | null;
+  any_high_risk_term_n: number;
+  any_high_risk_term_ratio: number | null;
+
   /* 次要指标，决策层面 */
   installment_rate: number | null;
   defer_rate: number | null;
   alternative_choice_rate: number | null;
-  alternative_click_rate: number | null;
   changed_choice_rate: number | null;
   median_decision_time_ms: number | null;
 
-  /* B 版信息模块使用率。A 版这两项恒为 null，不参与比较 */
-  viewed_cashflow_rate: number | null;
-  viewed_total_cost_rate: number | null;
+  /**
+   * 第二轮主要指标：本版本核心信息区块的有效曝光率。
+   * 两版都统计——A 版观测事实区、B 版观测分析区，内容不同但结构对等。
+   * 第一轮的 viewed_cashflow_rate / viewed_total_cost_rate 依赖折叠点击，
+   * 默认展开之后已无意义，故移除。
+   */
+  key_info_exposure_rate: number | null;
+  median_key_info_exposed_ms: number | null;
+
+  /** 注意力检查通过率。主分析排除未通过者，此处只作数据质量描述 */
+  attention_pass_n: number;
+  attention_pass_rate: number | null;
 }
 
-/** 单个参与者的高风险比例，主要指标的计算单位。 */
+/** 单个参与者的高风险比例（30 天口径），与第一轮同定义。 */
 export function highRiskRatio(view: ParticipantView): number | null {
   if (view.decisions.length === 0) return null;
   const risky = view.decisions.filter((d) => d.high_risk_choice).length;
+  return risky / view.decisions.length;
+}
+
+/** 单个参与者的高风险比例（完整还款期口径），第二轮的效果指标计算单位。 */
+export function highRiskTermRatio(view: ParticipantView): number | null {
+  if (view.decisions.length === 0) return null;
+  const risky = view.decisions.filter((d) => d.high_risk_term).length;
   return risky / view.decisions.length;
 }
 
@@ -207,9 +255,14 @@ export function computeCohort(views: ParticipantView[], variant: Variant): Cohor
   const counts = cohort.map((v) => v.decisions.filter((d) => d.high_risk_choice).length);
   const anyHighRisk = cohort.filter((v) => v.decisions.some((d) => d.high_risk_choice)).length;
 
+  const termRatios = cohort
+    .map(highRiskTermRatio)
+    .filter((r): r is number => r !== null);
+  const anyHighRiskTerm = cohort.filter((v) => v.decisions.some((d) => d.high_risk_term)).length;
+  const attentionPassed = cohort.filter((v) => v.participant.attention_check_passed === true).length;
+
   const n = cohort.length;
   const m = decisions.length;
-  const isB = variant === 'B';
 
   return {
     variant,
@@ -223,6 +276,10 @@ export function computeCohort(views: ParticipantView[], variant: Variant): Cohor
     mean_high_risk_count: mean(counts),
     any_high_risk_n: anyHighRisk,
     any_high_risk_ratio: rate(anyHighRisk, n),
+
+    mean_high_risk_term_ratio: mean(termRatios),
+    any_high_risk_term_n: anyHighRiskTerm,
+    any_high_risk_term_ratio: rate(anyHighRiskTerm, n),
 
     installment_rate: rate(
       decisions.filter((d) => d.final_choice === 'installment').length,
@@ -238,14 +295,14 @@ export function computeCohort(views: ParticipantView[], variant: Variant): Cohor
       decisions.filter((d) => d.final_choice === 'alternative').length,
       m,
     ),
-    alternative_click_rate: rate(decisions.filter((d) => d.clicked_lower_price).length, m),
     changed_choice_rate: rate(decisions.filter((d) => d.changed_choice).length, m),
     median_decision_time_ms: median(decisions.map((d) => d.decision_time_ms)),
 
-    viewed_cashflow_rate: isB ? rate(decisions.filter((d) => d.viewed_cashflow).length, m) : null,
-    viewed_total_cost_rate: isB
-      ? rate(decisions.filter((d) => d.viewed_total_cost).length, m)
-      : null,
+    key_info_exposure_rate: rate(decisions.filter((d) => d.key_info_exposed).length, m),
+    median_key_info_exposed_ms: median(decisions.map((d) => d.key_info_exposed_ms)),
+
+    attention_pass_n: attentionPassed,
+    attention_pass_rate: rate(attentionPassed, n),
   };
 }
 

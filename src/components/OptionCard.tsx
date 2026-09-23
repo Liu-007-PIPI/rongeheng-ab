@@ -45,6 +45,10 @@ export function OptionCard({
         </span>
       </div>
 
+      {/*
+        第二轮改为默认展开：不传 onToggleDetail 时内容直接呈现，页面上没有任何折叠层。
+        第一轮的折叠交互是信息触达率只有 12%—29.82% 的直接原因，这里保留旧分支只为兼容既有测试。
+      */}
       {detail && onToggleDetail ? (
         <>
           <button type="button" className="detail-toggle" onClick={onToggleDetail}>
@@ -52,6 +56,8 @@ export function OptionCard({
           </button>
           {detailOpen ? <div className="option-detail">{detail}</div> : null}
         </>
+      ) : detail ? (
+        <div className="option-detail">{detail}</div>
       ) : null}
     </div>
   );

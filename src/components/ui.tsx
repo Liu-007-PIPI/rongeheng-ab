@@ -29,7 +29,7 @@ export function Progress({ current, total }: { current: number; total: number })
   return (
     <div className="progress">
       <span>
-        情境 {current} / {total}
+        第 {current} 题 / 共 {total} 题
       </span>
       <span className="progress-track">
         <span className="progress-fill" style={{ width: `${pct}%` }} />
@@ -53,21 +53,30 @@ export type StatTone = 'plain' | 'accent' | 'cost' | 'reserve' | 'risk' | 'safe'
 /**
  * 标签 + 数值。默认左右排布；hero 为纵向排布的主指标，数字明显放大。
  * 标签与数值是相邻兄弟节点，测试可以用 label.nextElementSibling 取值。
+ *
+ * hint 是标签下面那行小字，用来把一个说法解释成大白话（"应急钱"是什么、
+ * "年利率"怎么读）。它只解释名词，不评价选项好坏，也不改变 A/B 两版
+ * 各自能看到的指标集合——同一个指标在哪一版出现，它的 hint 就一字不差地跟到哪一版。
  */
 export function Stat({
   label,
   value,
+  hint,
   tone = 'plain',
   hero = false,
 }: {
   label: ReactNode;
   value: ReactNode;
+  hint?: ReactNode;
   tone?: StatTone;
   hero?: boolean;
 }) {
   return (
     <div className={hero ? 'stat stat--hero' : 'stat'} data-tone={tone}>
-      <span className="stat-label">{label}</span>
+      <span className="stat-label">
+        {label}
+        {hint ? <span className="stat-hint">{hint}</span> : null}
+      </span>
       <span className="stat-value">{value}</span>
     </div>
   );

@@ -9,6 +9,8 @@ import {
   computeOverview,
 } from '../lib/metrics';
 import type { AnalysisFilter, CohortMetrics, ParticipantView } from '../lib/metrics';
+import { APP_VERSION, CURRENT_ROUND, ROUND_LABELS } from '../config/experiment';
+import type { RoundKey } from '../config/experiment';
 import type { DataBackend, StoredData, WithdrawalResult } from '../lib/storage';
 import type { CodeType, ScenarioId, Variant } from '../lib/types';
 import { CHOICE_LABELS } from '../lib/calc';
@@ -46,8 +48,9 @@ const SCENARIO_TITLES: Record<string, string> = Object.fromEntries(
 /* ────────────────── 总览 ────────────────── */
 
 export function OverviewPanel({ data }: { data: StoredData }) {
+  // 总览只统计当前轮。两轮情境参数不同，混在一起看会把招募进度看错。
   const overview = useMemo(
-    () => computeOverview(data, ACCESS_CODES.length),
+    () => computeOverview(data, ACCESS_CODES.length, CURRENT_ROUND),
     [data],
   );
 
@@ -63,14 +66,27 @@ export function OverviewPanel({ data }: { data: StoredData }) {
   ];
 
   return (
-    <div className="admin-grid">
-      {cells.map(([label, value]) => (
-        <div className="admin-tile" key={label}>
-          <span className="admin-tile-label">{label}</span>
-          <span className="admin-tile-value">{value}</span>
-        </div>
-      ))}
-    </div>
+    <>
+      <p className="admin-note">
+        以下数字只统计<strong>{ROUND_LABELS[CURRENT_ROUND]}</strong>
+        （网页版本 {APP_VERSION}）。
+        {overview.other_rounds > 0 ? (
+          <>
+            {' '}
+            库里另有 {overview.other_rounds} 人属于更早的轮次，未计入本屏。
+            两轮的情境参数不同，数据不可合并分析。
+          </>
+        ) : null}
+      </p>
+      <div className="admin-grid">
+        {cells.map(([label, value]) => (
+          <div className="admin-tile" key={label}>
+            <span className="admin-tile-label">{label}</span>
+            <span className="admin-tile-value">{value}</span>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -96,20 +112,30 @@ export function MetricsPanel({
     ['高风险比例中位数', (m) => pct(m.median_high_risk_ratio)],
     ['四分位 Q1 / Q3', (m) => `${pct(m.q1_high_risk_ratio)} / ${pct(m.q3_high_risk_ratio)}`],
     ['平均高风险情境数（满分 3）', (m) => num(m.mean_high_risk_count, 2)],
-    ['至少一次高风险', (m) => `${m.any_high_risk_n} 人 · ${pct(m.any_high_risk_ratio)}`],
+    ['至少一次高风险（30天口径）', (m) => `${m.any_high_risk_n} 人 · ${pct(m.any_high_risk_ratio)}`],
+    ['平均高风险比例（完整还款期）', (m) => pct(m.mean_high_risk_term_ratio)],
+    ['至少一次高风险（完整期）', (m) => `${m.any_high_risk_term_n} 人 · ${pct(m.any_high_risk_term_ratio)}`],
     ['分期选择率', (m) => pct(m.installment_rate)],
     ['暂缓购买率（储蓄+暂不）', (m) => pct(m.defer_rate)],
     ['低价替代选择率', (m) => pct(m.alternative_choice_rate)],
-    ['低价替代点击率', (m) => pct(m.alternative_click_rate)],
     ['提交前改过选择', (m) => pct(m.changed_choice_rate)],
     ['决策时间中位数', (m) => seconds(m.median_decision_time_ms)],
-    ['查看现金流（B 版）', (m) => pct(m.viewed_cashflow_rate)],
-    ['查看总成本（B 版）', (m) => pct(m.viewed_total_cost_rate)],
+    ['关键信息有效曝光率', (m) => pct(m.key_info_exposure_rate)],
+    ['关键信息曝光时长中位数', (m) => seconds(m.median_key_info_exposed_ms)],
+    ['注意力检查通过', (m) => `${m.attention_pass_n} 人 · ${pct(m.attention_pass_rate)}`],
   ];
 
   return (
     <>
       <FilterBar filter={filter} onFilter={onFilter} />
+
+      {filter.round === 'all' ? (
+        <p className="admin-note">
+          <strong>当前把两轮混在一起算。</strong>
+          两轮的情境参数不同（第一轮没有月收入字段，风险结构也不一样），
+          这里的比例不能用来写任何结论，只能用于核对数据是否都在。
+        </p>
+      ) : null}
 
       <p className="admin-note">
         主要指标在<strong>参与者层面</strong>计算：个人高风险比例 = 三个情境中高风险选择数 ÷ 3。
@@ -188,8 +214,31 @@ function FilterBar({
     { value: 'pilot', label: '仅预试' },
     { value: 'all', label: '全部' },
   ];
+  const rounds: { value: RoundKey | 'all'; label: string }[] = [
+    { value: 'round2', label: ROUND_LABELS.round2 },
+    { value: 'round1', label: ROUND_LABELS.round1 },
+    { value: 'all', label: '不分轮次' },
+  ];
   return (
     <div className="admin-filters">
+      {/*
+        轮次放在最前面。两轮的情境参数不同，跨轮合并出来的比例没有解释力，
+        所以"不分轮次"只是为了核对数据是否都在，不能拿它的数字写结论。
+      */}
+      <div className="segmented" role="radiogroup" aria-label="采集轮次">
+        {rounds.map((r) => (
+          <button
+            key={r.value}
+            type="button"
+            role="radio"
+            aria-checked={filter.round === r.value}
+            data-selected={filter.round === r.value}
+            onClick={() => onFilter({ ...filter, round: r.value })}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
       <div className="segmented" role="radiogroup" aria-label="样本范围">
         {types.map((t) => (
           <button
@@ -219,6 +268,7 @@ function FilterBar({
 /* ────────────────── 原始记录 ────────────────── */
 
 export interface RecordFilter {
+  round: RoundKey | 'all';
   codeType: CodeType | 'all';
   variant: Variant | 'all';
   completion: 'all' | 'completed' | 'in_progress';
@@ -226,6 +276,7 @@ export interface RecordFilter {
 }
 
 export const DEFAULT_RECORD_FILTER: RecordFilter = {
+  round: CURRENT_ROUND,
   codeType: 'all',
   variant: 'all',
   completion: 'all',
@@ -243,6 +294,7 @@ export function RecordsPanel({
 }) {
   const rows = useMemo(() => {
     const matched = views.filter((v) => {
+      if (filter.round !== 'all' && v.round !== filter.round) return false;
       if (filter.codeType !== 'all' && v.participant.code_type !== filter.codeType) return false;
       if (filter.variant !== 'all' && v.participant.variant !== filter.variant) return false;
       if (filter.completion === 'completed' && !v.completed) return false;
@@ -262,6 +314,17 @@ export function RecordsPanel({
     options: [string, string][];
     onChange: (v: string) => void;
   }[] = [
+    {
+      label: '轮次',
+      value: filter.round,
+      options: [
+        ['round2', ROUND_LABELS.round2],
+        ['round1', ROUND_LABELS.round1],
+        ['other', ROUND_LABELS.other],
+        ['all', '全部'],
+      ],
+      onChange: (v) => onFilter({ ...filter, round: v as RecordFilter['round'] }),
+    },
     {
       label: '样本',
       value: filter.codeType,
@@ -322,11 +385,11 @@ export function RecordsPanel({
               <th>情境</th>
               <th>次序</th>
               <th>最终选择</th>
-              <th>最低余额</th>
-              <th>高风险</th>
-              <th>看现金流</th>
-              <th>看总成本</th>
-              <th>点替代</th>
+              <th>30天余额</th>
+              <th>30天风险</th>
+              <th>期内最低</th>
+              <th>完整期风险</th>
+              <th>关键信息曝光</th>
               <th>改过</th>
               <th>耗时</th>
               <th>提交时间</th>
@@ -343,9 +406,9 @@ export function RecordsPanel({
                 <td>{CHOICE_LABELS[decision.final_choice]}</td>
                 <td>{decision.projected_min_balance}</td>
                 <td>{decision.high_risk_choice ? '是' : '否'}</td>
-                <td>{view.participant.variant === 'B' ? (decision.viewed_cashflow ? '是' : '否') : '—'}</td>
-                <td>{view.participant.variant === 'B' ? (decision.viewed_total_cost ? '是' : '否') : '—'}</td>
-                <td>{decision.clicked_lower_price ? '是' : '否'}</td>
+                <td>{decision.worst_balance_term}</td>
+                <td>{decision.high_risk_term ? '是' : '否'}</td>
+                <td>{decision.key_info_exposed ? '是' : '否'}</td>
                 <td>{decision.changed_choice ? '是' : '否'}</td>
                 <td>{seconds(decision.decision_time_ms)}</td>
                 <td>{localTime(decision.submitted_at)}</td>
@@ -370,12 +433,14 @@ export function ParticipantsPanel({ views }: { views: ParticipantView[] }) {
     <>
       <p className="admin-note">
         只显示匿名码与匿名基线字段。系统从不采集姓名、手机号、真实账户或设备标识。
+        本表列出库里的全部参与者，<strong>轮次</strong>一列标明各自属于哪一轮。
       </p>
       <div className="admin-scroll">
         <table className="admin-table">
           <thead>
             <tr>
               <th>匿名码</th>
+              <th>轮次</th>
               <th>组</th>
               <th>样本</th>
               <th>状态</th>
@@ -392,6 +457,7 @@ export function ParticipantsPanel({ views }: { views: ParticipantView[] }) {
             {views.map((v) => (
               <tr key={v.participant.participant_id}>
                 <td>{v.participant.access_code_label}</td>
+                <td>{ROUND_LABELS[v.round]}</td>
                 <td>{v.participant.variant}</td>
                 <td>{v.participant.code_type === 'pilot' ? '预试' : '正式'}</td>
                 <td>{v.withdrawn ? '已撤回' : v.completed ? '已完成' : '进行中'}</td>
@@ -412,7 +478,7 @@ export function ParticipantsPanel({ views }: { views: ParticipantView[] }) {
             ))}
             {views.length === 0 ? (
               <tr>
-                <td colSpan={11}>还没有参与者记录</td>
+                <td colSpan={12}>还没有参与者记录</td>
               </tr>
             ) : null}
           </tbody>

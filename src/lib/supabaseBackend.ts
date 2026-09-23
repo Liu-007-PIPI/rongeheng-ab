@@ -29,6 +29,7 @@ import type {
   StoredData,
   WithdrawalResult,
 } from './storage';
+import { bumpBrowserSubmissionSeq, forgetCurrentCode } from './storage';
 import { ensureAnonymousSession, getSupabase } from './supabaseClient';
 
 /* ── 数据库行 → 前端类型 ── */
@@ -41,6 +42,7 @@ interface ParticipantRow {
   disposable_funds_band: string | null;
   installment_experience: string | null;
   recent_large_purchase: boolean | null;
+  attention_check_passed: boolean | null;
   consent_version: string;
   consent_at: string;
   created_at: string;
@@ -53,6 +55,7 @@ function toParticipant(row: ParticipantRow): ParticipantRecord {
     access_code_label: row.access_codes?.code_label ?? '',
     variant: row.variant,
     code_type: row.access_codes?.code_type ?? 'formal',
+    attention_check_passed: row.attention_check_passed ?? null,
     consent_version: row.consent_version,
     consent_at: row.consent_at,
     created_at: row.created_at,
@@ -76,6 +79,35 @@ export class SupabaseBackend implements DataBackend {
 
   /* ── 参与者端 ── */
 
+  /**
+   * 当前匿名身份的 uid。没有登录态就返回 null。
+   *
+   * 参与者端的每一次查询都必须显式带上这个条件，不能只靠 RLS 去收窄结果。
+   * participants / decisions 上各有两条 select 策略（本人可读、管理员可读），
+   * 它们是"或"的关系：同一个浏览器里只要登过管理员后台，is_admin() 就为真，
+   * 于是全库的行都变得可见——不带过滤的查询会一次读到几十行。
+   * 这正是 "JSON object requested, multiple (or no) rows returned" 的来源。
+   */
+  private async currentUserId(): Promise<string | null> {
+    const supabase = getSupabase();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user.id ?? null;
+  }
+
+  /** 当前身份对应的参与者主键。用于把参与者端的查询钉死在自己这一行上。 */
+  private async myParticipantId(): Promise<string | null> {
+    const uid = await this.currentUserId();
+    if (!uid) return null;
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('participants')
+      .select('participant_id')
+      .eq('auth_user_id', uid)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as { participant_id: string } | null)?.participant_id ?? null;
+  }
+
   async peekCode(codeLabel: string): Promise<CodeStatus> {
     const supabase = getSupabase();
     const { data, error } = await supabase.rpc('peek_access_code', { p_code: codeLabel });
@@ -85,13 +117,14 @@ export class SupabaseBackend implements DataBackend {
 
   async findMyProgress(): Promise<Progress | null> {
     const supabase = getSupabase();
-    const { data: sessionData } = await supabase.auth.getSession();
     // 还没有匿名身份就说明这台浏览器没开始过，不要在这里凭空创建一个
-    if (!sessionData.session) return null;
+    const uid = await this.currentUserId();
+    if (!uid) return null;
 
     const { data: participantRow, error } = await supabase
       .from('participants')
       .select(PARTICIPANT_SELECT)
+      .eq('auth_user_id', uid) // 必须显式过滤，理由见 currentUserId 的注释
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!participantRow) return null;
@@ -154,6 +187,48 @@ export class SupabaseBackend implements DataBackend {
     return progress;
   }
 
+  async startOpenSession(
+    baseline: BaselineAnswers,
+    consentVersion: string,
+    appVersion: string,
+  ): Promise<Progress> {
+    await ensureAnonymousSession();
+    const supabase = getSupabase();
+
+    const { error } = await supabase.rpc('start_experiment_open', {
+      p_baseline: {
+        age_group: baseline.age_group,
+        role_status: baseline.role_status,
+        disposable_funds_band: baseline.disposable_funds_band,
+        installment_experience: baseline.installment_experience,
+        recent_large_purchase: baseline.recent_large_purchase,
+      },
+      p_consent_version: consentVersion,
+      p_app_version: appVersion,
+      p_browser_submission_seq: bumpBrowserSubmissionSeq(),
+    });
+    if (error) throw new Error(error.message);
+
+    const progress = await this.findMyProgress();
+    if (!progress) throw new Error('start_experiment_open 执行后仍未读到参与者记录');
+    return progress;
+  }
+
+  /**
+   * 换一个新的匿名登录身份。
+   *
+   * participants 表上 auth_user_id 是唯一的，同一个匿名身份只能有一份作答。
+   * 想让同一台设备再作答一次，就必须先登出再重新匿名登录，拿到新的 uid。
+   * 旧身份对应的那份作答已经写在库里，不受影响，但这台浏览器之后
+   * 再也读不回它了——这正是撤回码要在完成页展示给参与者的原因。
+   */
+  async beginNewSubmission(): Promise<void> {
+    const supabase = getSupabase();
+    forgetCurrentCode();
+    await supabase.auth.signOut();
+    await ensureAnonymousSession();
+  }
+
   async saveDecision(input: DecisionInput): Promise<DecisionRecord> {
     const supabase = getSupabase();
     const { error } = await supabase.rpc('submit_decision', {
@@ -163,18 +238,23 @@ export class SupabaseBackend implements DataBackend {
       p_payment_path: input.selected_payment_path,
       p_installment_term: input.installment_term,
       p_due_now: input.due_now,
-      p_viewed_cashflow: input.viewed_cashflow,
-      p_viewed_total_cost: input.viewed_total_cost,
-      p_clicked_lower_price: input.clicked_lower_price,
+      p_key_info_exposed: input.key_info_exposed,
+      p_key_info_exposed_ms: input.key_info_exposed_ms,
       p_changed_choice: input.changed_choice,
       p_decision_time_ms: input.decision_time_ms,
     });
     if (error) throw new Error(error.message);
 
-    // 回读服务端那条记录：projected_min_balance 与 high_risk_choice 以服务端为准
+    // 回读服务端那条记录：projected_min_balance 与 high_risk_choice 以服务端为准。
+    // participant_id 这个条件不能省：管理员登录态下 decisions 全表可读，
+    // 只按 scenario_id 排序取最新一条，会读回别人的那份决策。
+    const participantId = await this.myParticipantId();
+    if (!participantId) throw new Error('决策已提交但未能读回，请刷新页面确认');
+
     const { data, error: readError } = await supabase
       .from('decisions')
       .select('*')
+      .eq('participant_id', participantId)
       .eq('scenario_id', input.scenario_id)
       .order('submitted_at', { ascending: false })
       .limit(1)
@@ -182,6 +262,12 @@ export class SupabaseBackend implements DataBackend {
     if (readError) throw new Error(readError.message);
     if (!data) throw new Error('决策已提交但未能读回，请刷新页面确认');
     return data as DecisionRecord;
+  }
+
+  async saveAttentionCheck(passed: boolean): Promise<void> {
+    const supabase = getSupabase();
+    const { error } = await supabase.rpc('submit_attention_check', { p_passed: passed });
+    if (error) throw new Error(error.message);
   }
 
   async logEvent(

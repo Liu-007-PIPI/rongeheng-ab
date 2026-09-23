@@ -1,11 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { APP_VERSION, CONSENT_VERSION } from '../config/experiment';
+import { APP_VERSION, CONSENT_VERSION, REQUIRE_ACCESS_CODE } from '../config/experiment';
 import { createBackend } from '../lib/storage';
 import type { DataBackend, DecisionInput, Progress } from '../lib/storage';
 import type { BaselineAnswers, DecisionRecord, EventName, ParticipantRecord, ScenarioId, SessionRecord } from '../lib/types';
 
-export type Step = 'loading' | 'consent' | 'code' | 'baseline' | 'scenario' | 'done';
+export type Step = 'loading' | 'consent' | 'code' | 'baseline' | 'scenario' | 'attention' | 'done';
+
+/** 注意力检查插在第几个情境之后。放中间，前后都有情境，不容易被当成流程尾巴敷衍过去。 */
+export const ATTENTION_CHECK_AFTER = 2;
 
 export type CodeError =
   | null
@@ -40,12 +43,13 @@ interface ExperimentApi extends ExperimentState {
   submitCode: (input: string) => Promise<void>;
   submitBaseline: (answers: BaselineAnswers) => Promise<void>;
   submitDecision: (input: DecisionInput) => Promise<void>;
+  submitAttentionCheck: (passed: boolean) => Promise<void>;
   logEvent: (
     name: EventName,
     scenarioId: ScenarioId | null,
     metadata?: Record<string, string | number | boolean | null>,
   ) => void;
-  restart: () => void;
+  restart: () => Promise<void>;
 }
 
 const Ctx = createContext<ExperimentApi | null>(null);
@@ -74,19 +78,26 @@ const INITIAL: ExperimentState = {
   busy: false,
 };
 
-/** 把一份进度落成界面状态。 */
+/**
+ * 把一份进度落成界面状态。
+ * 刷新或换设备续答时也要能正确落回注意力检查那一步，否则这道题会被绕过去。
+ */
 function fromProgress(progress: Progress): Partial<ExperimentState> {
   const done = progress.decisions.length;
   const finished =
     progress.session.completion_status === 'completed' ||
     done >= progress.session.scenario_order.length;
+  const needsAttention =
+    !finished &&
+    done === ATTENTION_CHECK_AFTER &&
+    progress.participant.attention_check_passed === null;
   return {
     participant: progress.participant,
     session: progress.session,
     decisions: progress.decisions,
     currentIndex: done,
     currentScenarioId: finished ? null : progress.session.scenario_order[done],
-    step: finished ? 'done' : 'scenario',
+    step: finished ? 'done' : needsAttention ? 'attention' : 'scenario',
     codeError: null,
     errorMessage: null,
   };
@@ -114,7 +125,8 @@ export function ExperimentProvider({ children }: { children: ReactNode }) {
         /* 读不到就按新访客处理 */
       }
       if (!cancelled) {
-        setState((s) => ({ ...s, step: hasConsented() ? 'code' : 'consent' }));
+        const afterConsent = REQUIRE_ACCESS_CODE ? 'code' : 'baseline';
+        setState((s) => ({ ...s, step: hasConsented() ? afterConsent : 'consent' }));
       }
     })();
     return () => {
@@ -141,7 +153,8 @@ export function ExperimentProvider({ children }: { children: ReactNode }) {
     } catch {
       /* 隐私模式下无法记住，仅影响刷新体验 */
     }
-    setState((s) => ({ ...s, step: 'code' }));
+    // 开放模式没有匿名码这一步，同意之后直接进基线
+    setState((s) => ({ ...s, step: REQUIRE_ACCESS_CODE ? 'code' : 'baseline' }));
   }, []);
 
   const submitCode = useCallback(
@@ -192,10 +205,13 @@ export function ExperimentProvider({ children }: { children: ReactNode }) {
   const submitBaseline = useCallback(
     async (answers: BaselineAnswers) => {
       const code = state.pendingCode;
-      if (!code) return;
+      // 定向模式必须先有已验证的匿名码；开放模式没有码，直接开场
+      if (REQUIRE_ACCESS_CODE && !code) return;
       setState((s) => ({ ...s, busy: true, codeError: null, errorMessage: null }));
       try {
-        const progress = await backend.startSession(code, answers, CONSENT_VERSION, APP_VERSION);
+        const progress = code
+          ? await backend.startSession(code, answers, CONSENT_VERSION, APP_VERSION)
+          : await backend.startOpenSession(answers, CONSENT_VERSION, APP_VERSION);
         setState((s) => ({ ...s, ...fromProgress(progress), busy: false }));
       } catch (e) {
         // 写入失败时停在原页，不显示"已成功"，并把原始错误显示给用户
@@ -227,13 +243,17 @@ export function ExperimentProvider({ children }: { children: ReactNode }) {
             : [...s.decisions, record];
           const nextIndex = decisions.length;
           const finished = nextIndex >= session.scenario_order.length;
+          const needsAttention =
+            !finished &&
+            nextIndex === ATTENTION_CHECK_AFTER &&
+            s.participant?.attention_check_passed == null;
           return {
             ...s,
             busy: false,
             decisions,
             currentIndex: nextIndex,
             currentScenarioId: finished ? null : session.scenario_order[nextIndex],
-            step: finished ? 'done' : 'scenario',
+            step: finished ? 'done' : needsAttention ? 'attention' : 'scenario',
           };
         });
       } catch {
@@ -244,9 +264,56 @@ export function ExperimentProvider({ children }: { children: ReactNode }) {
     [backend, state.session],
   );
 
-  const restart = useCallback(() => {
-    setState({ ...INITIAL, step: 'code' });
-  }, []);
+  /**
+   * 提交注意力检查结果并进入最后一个情境。
+   * 通过与否都照常继续——当场把人拦下来会让参与者知道自己"答错了"，
+   * 进而改变后续情境里的作答行为。排除发生在分析阶段，按预注册的规则执行。
+   */
+  const submitAttentionCheck = useCallback(
+    async (passed: boolean) => {
+      const session = state.session;
+      if (!session) return;
+      setState((s) => ({ ...s, busy: true, errorMessage: null }));
+      try {
+        await backend.saveAttentionCheck(passed);
+        logEvent('attention_check_answered', null, { passed });
+        setState((s) => ({
+          ...s,
+          busy: false,
+          participant: s.participant
+            ? { ...s.participant, attention_check_passed: passed }
+            : s.participant,
+          currentScenarioId: session.scenario_order[s.currentIndex] ?? null,
+          step: 'scenario',
+        }));
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        setState((s) => ({ ...s, busy: false, errorMessage: message }));
+      }
+    },
+    [backend, state.session, logEvent],
+  );
+
+  /**
+   * 在同一台设备上再作答一份。
+   *
+   * 会换一个全新的身份，上一份已提交的作答留在库里不受影响，
+   * 但这台浏览器之后读不回它了——撤回码必须在完成页交给参与者。
+   */
+  const restart = useCallback(async () => {
+    setState((s) => ({ ...s, busy: true, errorMessage: null }));
+    try {
+      await backend.beginNewSubmission();
+      setState({
+        ...INITIAL,
+        // 同意页已经读过，不必重复；开放模式直接进基线
+        step: REQUIRE_ACCESS_CODE ? 'code' : 'baseline',
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setState((s) => ({ ...s, busy: false, errorMessage: message }));
+    }
+  }, [backend]);
 
   const api = useMemo<ExperimentApi>(
     () => ({
@@ -256,10 +323,11 @@ export function ExperimentProvider({ children }: { children: ReactNode }) {
       submitCode,
       submitBaseline,
       submitDecision,
+      submitAttentionCheck,
       logEvent,
       restart,
     }),
-    [state, backend, agreeConsent, submitCode, submitBaseline, submitDecision, logEvent, restart],
+    [state, backend, agreeConsent, submitCode, submitBaseline, submitDecision, submitAttentionCheck, logEvent, restart],
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

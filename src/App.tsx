@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SimBanner } from './components/ui';
+import { AttentionCheckPage } from './pages/AttentionCheckPage';
 import { BaselinePage } from './pages/BaselinePage';
 import { CodePage } from './pages/CodePage';
 import { ConsentPage } from './pages/ConsentPage';
@@ -45,6 +46,9 @@ function ParticipantRouter() {
           total={session.scenario_order.length}
         />
       );
+    case 'attention':
+      if (!participant || !session) return <CodePage />;
+      return <AttentionCheckPage />;
     case 'done':
       return <DonePage />;
   }

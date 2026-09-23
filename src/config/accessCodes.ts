@@ -39,10 +39,16 @@ const PILOT_ROWS: AccessCodeRow[] = [
   ...buildRows('PILOT', range(6, 10), 'B', 'pilot', 2),
 ];
 
-/** 正式 40 个：A001–A020 与 B001–B020。 */
+/**
+ * 正式 160 个：A001–A080 与 B001–B080。
+ *
+ * 第二轮目标完成量 80—120 人。第一轮 50 个码换来 38 人完成（76%），
+ * 按同样的完成率，120 人需要约 158 个码，故两组各备 80 个。
+ * 备得多不会影响分析——未启用的码不进入任何分母，第一轮 12 个未启用码即如此处理。
+ */
 const FORMAL_ROWS: AccessCodeRow[] = [
-  ...buildRows('A', range(1, 20), 'A', 'formal', 3),
-  ...buildRows('B', range(1, 20), 'B', 'formal', 3),
+  ...buildRows('A', range(1, 80), 'A', 'formal', 3),
+  ...buildRows('B', range(1, 80), 'B', 'formal', 3),
 ];
 
 export const ACCESS_CODES: AccessCodeRow[] = [...PILOT_ROWS, ...FORMAL_ROWS];

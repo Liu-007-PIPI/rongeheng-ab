@@ -34,7 +34,13 @@ function makeParticipant(
   id: string,
   variant: Variant,
   riskFlags: boolean[],
-  opts: { codeType?: CodeType; completed?: boolean; choice?: FinalChoice } = {},
+  opts: {
+    codeType?: CodeType;
+    completed?: boolean;
+    choice?: FinalChoice;
+    /** 会话版本号，决定这条记录属于哪一轮。默认造成第二轮数据。 */
+    appVersion?: string;
+  } = {},
 ) {
   const codeType = opts.codeType ?? 'formal';
   const completed = opts.completed ?? true;
@@ -47,6 +53,7 @@ function makeParticipant(
     consent_version: 'v1.0',
     consent_at: '2026-09-20T00:00:00.000Z',
     created_at: '2026-09-20T00:00:00.000Z',
+    attention_check_passed: true,
     baseline: {
       age_group: '18_22',
       role_status: 'undergraduate',
@@ -65,7 +72,8 @@ function makeParticipant(
     completed_at: completed ? '2026-09-20T00:10:00.000Z' : null,
     total_duration_ms: completed ? 600000 : null,
     completion_status: completed ? 'completed' : 'in_progress',
-    app_version: 'test',
+    app_version: opts.appVersion ?? '0.5.0-round2',
+    browser_submission_seq: 1,
   };
 
   const decisions: DecisionRecord[] = riskFlags.map((risky, i) => ({
@@ -79,6 +87,10 @@ function makeParticipant(
     installment_term: 12,
     projected_min_balance: risky ? -100 : 2000,
     high_risk_choice: risky,
+    worst_balance_term: risky ? -100 : 2000,
+    high_risk_term: risky,
+    key_info_exposed: true,
+    key_info_exposed_ms: 3000,
     viewed_cashflow: variant === 'B',
     viewed_total_cost: variant === 'B',
     clicked_lower_price: false,
@@ -202,7 +214,11 @@ describe('分析总体与排除规则', () => {
     expect(applyFilter(buildViews(snapshot), DEFAULT_FILTER)).toHaveLength(1);
     // 放开完成要求后两人都在
     expect(
-      applyFilter(buildViews(snapshot), { codeType: 'formal', completedOnly: false }),
+      applyFilter(buildViews(snapshot), {
+        codeType: 'formal',
+        completedOnly: false,
+        round: 'round2',
+      }),
     ).toHaveLength(2);
   });
 
@@ -211,9 +227,51 @@ describe('分析总体与排除规则', () => {
       [makeParticipant('A001', 'A', [true, true, true]), makeParticipant('A002', 'A', [false, false, false])],
       ['A002'],
     );
-    const all = applyFilter(buildViews(snapshot), { codeType: 'all', completedOnly: false });
+    const all = applyFilter(buildViews(snapshot), {
+      codeType: 'all',
+      completedOnly: false,
+      round: 'all',
+    });
     expect(all).toHaveLength(1);
     expect(all[0].participant.access_code_label).toBe('A001');
+  });
+
+  /*
+   * 轮次隔离。两轮的情境参数不同（第一轮没有月收入字段，风险结构也不一样），
+   * 合并算出来的比例没有解释力，所以默认分析集必须只含当前轮。
+   */
+  it('默认分析集只含当前轮，上一轮的人被排除', () => {
+    const snapshot = makeSnapshot([
+      makeParticipant('A001', 'A', [true, true, true]),
+      makeParticipant('A900', 'A', [true, true, true], { appVersion: '0.4.0-dev' }),
+    ]);
+    const views = applyFilter(buildViews(snapshot), DEFAULT_FILTER);
+    expect(views).toHaveLength(1);
+    expect(views[0].participant.access_code_label).toBe('A001');
+  });
+
+  it('按轮次筛选能单独取出上一轮，也能不分轮次取全部', () => {
+    const snapshot = makeSnapshot([
+      makeParticipant('A001', 'A', [true, true, true]),
+      makeParticipant('A900', 'A', [true, true, true], { appVersion: '0.4.0-dev' }),
+    ]);
+    const views = buildViews(snapshot);
+    const base = { codeType: 'all', completedOnly: false } as const;
+
+    expect(applyFilter(views, { ...base, round: 'round1' })).toHaveLength(1);
+    expect(applyFilter(views, { ...base, round: 'round1' })[0].participant.access_code_label).toBe(
+      'A900',
+    );
+    expect(applyFilter(views, { ...base, round: 'all' })).toHaveLength(2);
+  });
+
+  it('版本号无法归入任何一轮时记为 other，不会被误算进当前轮', () => {
+    const snapshot = makeSnapshot([
+      makeParticipant('A001', 'A', [true, true, true], { appVersion: '0.2.0-dev' }),
+    ]);
+    const views = buildViews(snapshot);
+    expect(views[0].round).toBe('other');
+    expect(applyFilter(views, DEFAULT_FILTER)).toHaveLength(0);
   });
 });
 
@@ -256,12 +314,14 @@ describe('空数据不会显示成 0', () => {
     expect(computeAb(views).absolute_difference).toBeNull();
   });
 
-  it('A 组的 B 版专属指标恒为 null，不参与比较', () => {
+  it('关键信息曝光率两版都统计，不再是 B 版专属', () => {
+    // 第一轮的触达指标依赖折叠点击，A 版恒为 null；第二轮默认展开后改用曝光时长，
+    // A 版观测事实区、B 版观测分析区，结构对等，两版都有值。
     const snapshot = makeSnapshot([makeParticipant('A001', 'A', [true, true, true])]);
     const views = applyFilter(buildViews(snapshot), DEFAULT_FILTER);
     const a = computeCohort(views, 'A');
-    expect(a.viewed_cashflow_rate).toBeNull();
-    expect(a.viewed_total_cost_rate).toBeNull();
+    expect(a.key_info_exposure_rate).not.toBeNull();
+    expect(a.attention_pass_rate).not.toBeNull();
   });
 });
 

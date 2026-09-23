@@ -13,14 +13,16 @@ import type { DecisionRecord, ParticipantRecord, SessionRecord, Variant } from '
 const PASSPHRASE = 'rongeheng-dev';
 
 /** 直接往 localStorage 里塞数据，避免每次都点完整个参与者流程。 */
-function seed(people: { label: string; variant: Variant; risky: boolean[] }[]) {
+function seed(
+  people: { label: string; variant: Variant; risky: boolean[]; appVersion?: string }[],
+) {
   const participants: ParticipantRecord[] = [];
   const sessions: SessionRecord[] = [];
   const decisions: DecisionRecord[] = [];
   const code_status: Record<string, 'started' | 'completed'> = {};
   const scenarios = ['laptop', 'phone', 'course'] as const;
 
-  for (const { label, variant, risky } of people) {
+  for (const { label, variant, risky, appVersion } of people) {
     const pid = `p-${label}`;
     const sid = `s-${label}`;
     participants.push({
@@ -31,6 +33,7 @@ function seed(people: { label: string; variant: Variant; risky: boolean[] }[]) {
       consent_version: 'v1.0',
       consent_at: '2026-09-20T02:00:00.000Z',
       created_at: '2026-09-20T02:00:00.000Z',
+      attention_check_passed: true,
       baseline: {
         age_group: '18_22',
         role_status: 'undergraduate',
@@ -48,7 +51,9 @@ function seed(people: { label: string; variant: Variant; risky: boolean[] }[]) {
       completed_at: '2026-09-20T02:10:00.000Z',
       total_duration_ms: 600000,
       completion_status: 'completed',
-      app_version: 'test',
+      // 后台默认只显示当前轮，夹具默认造第二轮数据才会出现在界面上
+      app_version: appVersion ?? '0.5.0-round2',
+      browser_submission_seq: 1,
     });
     risky.forEach((isRisky, i) => {
       decisions.push({
@@ -62,9 +67,10 @@ function seed(people: { label: string; variant: Variant; risky: boolean[] }[]) {
         installment_term: 12,
         projected_min_balance: isRisky ? -100 : 2000,
         high_risk_choice: isRisky,
-        viewed_cashflow: variant === 'B',
-        viewed_total_cost: variant === 'B',
-        clicked_lower_price: false,
+        worst_balance_term: isRisky ? -100 : 2000,
+        high_risk_term: isRisky,
+        key_info_exposed: true,
+        key_info_exposed_ms: 3000,
         changed_choice: false,
         decision_time_ms: 12000,
         submitted_at: '2026-09-20T02:05:00.000Z',
@@ -145,6 +151,27 @@ describe('总览', () => {
     const tile = screen.getByText('完成数 A / B').parentElement!;
     expect(within(tile).getByText('2 / 1')).toBeTruthy();
     expect(within(screen.getByText('已完成').parentElement!).getByText('3')).toBeTruthy();
+  });
+
+  /*
+   * 招募期间最常看的就是这一屏。上一轮的 39 人如果混进"已完成"，
+   * 会被当成本轮进度，进而影响什么时候停止招募——这正是预注册要防的事。
+   */
+  it('只统计当前轮，上一轮的人不计入且单独提示', async () => {
+    seed([
+      { label: 'A001', variant: 'A', risky: [true, true, true] },
+      { label: 'B001', variant: 'B', risky: [false, false, false] },
+      { label: 'OLD01', variant: 'A', risky: [true, true, true], appVersion: '0.4.0-dev' },
+      { label: 'OLD02', variant: 'B', risky: [true, true, true], appVersion: '0.4.0-dev' },
+    ]);
+    await signInAdmin();
+
+    // 已完成只算第二轮那 2 人，不是库里的 4 人
+    expect(within(screen.getByText('已完成').parentElement!).getByText('2')).toBeTruthy();
+    expect(within(screen.getByText('完成数 A / B').parentElement!).getByText('1 / 1')).toBeTruthy();
+
+    // 被挡掉的人数要明说，不能让它们凭空消失
+    expect(screen.getByText(/库里另有 2 人属于更早的轮次/)).toBeTruthy();
   });
 });
 

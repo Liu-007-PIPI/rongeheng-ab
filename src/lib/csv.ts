@@ -59,6 +59,7 @@ export function buildTables(data: StoredData): CsvTable[] {
       'disposable_funds_band',
       'installment_experience',
       'recent_large_purchase',
+      'attention_check_passed',
       'consent_version',
       'consent_at',
       'created_at',
@@ -74,6 +75,7 @@ export function buildTables(data: StoredData): CsvTable[] {
       p.baseline.disposable_funds_band,
       p.baseline.installment_experience,
       p.baseline.recent_large_purchase, // null 会导出为空字符串，不是 FALSE
+      p.attention_check_passed, // 未作答为空字符串，不是 FALSE
       p.consent_version,
       iso(p.consent_at),
       iso(p.created_at),
@@ -92,6 +94,7 @@ export function buildTables(data: StoredData): CsvTable[] {
       'total_duration_ms',
       'completion_status',
       'app_version',
+      'browser_submission_seq',
     ],
     rows: data.sessions.map((s) => [
       s.session_id,
@@ -103,6 +106,7 @@ export function buildTables(data: StoredData): CsvTable[] {
       s.total_duration_ms, // 未完成时为 null → 空字符串
       s.completion_status,
       s.app_version,
+      s.browser_submission_seq, // 开放模式下 >1 表示该设备此前已提交过
     ]),
   };
 
@@ -119,9 +123,10 @@ export function buildTables(data: StoredData): CsvTable[] {
       'installment_term',
       'projected_min_balance',
       'high_risk_choice',
-      'viewed_cashflow',
-      'viewed_total_cost',
-      'clicked_lower_price',
+      'worst_balance_term',
+      'high_risk_term',
+      'key_info_exposed',
+      'key_info_exposed_ms',
       'changed_choice',
       'decision_time_ms',
       'submitted_at',
@@ -137,9 +142,10 @@ export function buildTables(data: StoredData): CsvTable[] {
       d.installment_term,
       d.projected_min_balance,
       d.high_risk_choice,
-      d.viewed_cashflow,
-      d.viewed_total_cost,
-      d.clicked_lower_price,
+      d.worst_balance_term,
+      d.high_risk_term,
+      d.key_info_exposed,
+      d.key_info_exposed_ms,
       d.changed_choice,
       d.decision_time_ms,
       iso(d.submitted_at),

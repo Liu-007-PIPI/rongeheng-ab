@@ -25,8 +25,8 @@ export function BaselinePage() {
 
   return (
     <Screen
-      title="几个基本情况"
-      lede="这些问题只用于描述参与者整体构成，不会用来识别你本人。"
+      title="先问你几个基本情况"
+      lede="这几题只是想知道参加的人大概都是些什么人，认不出你是谁。"
     >
       {BASELINE_FIELDS.map((field) => (
         <fieldset className="field" key={field.key}>
@@ -42,7 +42,7 @@ export function BaselinePage() {
 
       {errorMessage ? (
         <p className="form-note">
-          没能开始实验，请稍后重试。如果一直这样，把下面这行发给项目负责人：
+          没能开始，过一会儿再点一次。要是一直这样，把下面这行字发给负责人：
           <br />
           <code>{errorMessage}</code>
         </p>

@@ -312,8 +312,18 @@ body {
 }
 
 .stat-label {
+  min-width: 0;
   color: var(--text-secondary);
   font-size: 13px;
+  line-height: 1.45;
+}
+
+/* 标签下面那行大白话解释。比标签再弱一级，不抢数字的注意力 */
+.stat-hint {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -674,9 +684,16 @@ fieldset {
   font-weight: 400;
 }
 
+/*
+  吸底的操作区。只放按钮和一行说明，不要往里塞会随选项变高的内容——
+  sticky 元素一旦高过一屏，就会盖满视口并让页面滚不动，按钮反而被挤出可视区。
+  下面两行是保险：真出现超高内容时让它自己滚，而不是吃掉整个屏幕。
+*/
 .actions {
   position: sticky;
   bottom: 0;
+  max-height: 60vh;
+  overflow-y: auto;
   margin: 24px calc(var(--gutter) * -1) 0;
   padding: 16px var(--gutter) calc(16px + env(safe-area-inset-bottom));
   background: linear-gradient(to bottom, rgba(22, 24, 28, 0), var(--bg) 24px);
@@ -1036,4 +1053,22 @@ fieldset {
 
 .admin-login .admin-input {
   margin-top: 4px;
+}
+
+/* ── 撤回码 ──
+   开放模式下参与者手里唯一的凭证，必须一眼可读、方便抄写或截图。
+   用等宽数字与加宽字距，降低抄错的概率。 */
+.withdraw-code {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px dashed var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--card-2);
+  color: var(--text-primary);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.14em;
+  text-align: center;
+  user-select: all;
 }

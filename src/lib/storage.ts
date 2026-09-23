@@ -24,9 +24,11 @@ import type {
   PaymentPath,
   ScenarioId,
   SessionRecord,
+  Variant,
   WithdrawalRecord,
 } from './types';
 import { ACCESS_CODES, lookupCode } from '../config/accessCodes';
+import { REQUIRE_ACCESS_CODE } from '../config/experiment';
 import { isSupabaseConfigured } from './supabaseClient';
 import { SupabaseBackend } from './supabaseBackend';
 import { ALL_SCENARIO_IDS } from '../config/scenarios';
@@ -57,11 +59,15 @@ export interface DecisionInput {
   installment_term: number | null;
   /** 当期需支付金额。服务端用它重算余额与风险标签，不直接信任前端算好的结果 */
   due_now: number;
+  /** 30 天口径，与第一轮同定义，仅作对照 */
   projected_min_balance: number;
   high_risk_choice: boolean;
-  viewed_cashflow: boolean;
-  viewed_total_cost: boolean;
-  clicked_lower_price: boolean;
+  /** 完整还款期口径，第二轮主要风险判定 */
+  worst_balance_term: number;
+  high_risk_term: boolean;
+  /** 本版本核心信息区块是否获得有效曝光（视口内累计停留 ≥ 2 秒） */
+  key_info_exposed: boolean;
+  key_info_exposed_ms: number;
   changed_choice: boolean;
   decision_time_ms: number;
 }
@@ -94,8 +100,28 @@ export interface DataBackend {
     appVersion: string,
   ): Promise<Progress>;
 
+  /**
+   * 开放模式：不需要预先发放的匿名码，直接开始。
+   * 分组由服务端按两组当前人数自动平衡分配，撤回码自动生成后随参与者记录返回。
+   */
+  startOpenSession(
+    baseline: BaselineAnswers,
+    consentVersion: string,
+    appVersion: string,
+  ): Promise<Progress>;
+
+  /**
+   * 为"在同一台设备上再作答一次"准备一个干净的身份。
+   * 本地实现只是忘掉当前作答；Supabase 实现会换一个新的匿名登录身份，
+   * 否则 participants 表上的 auth_user_id 唯一约束会挡住第二份作答。
+   */
+  beginNewSubmission(): Promise<void>;
+
   /** 对 session_id + scenario_id 幂等。三个情境齐了会自动把会话标记为完成。 */
   saveDecision(input: DecisionInput): Promise<DecisionRecord>;
+
+  /** 记录注意力检查结果。通过与否都照常继续，排除发生在分析阶段。 */
+  saveAttentionCheck(passed: boolean): Promise<void>;
 
   logEvent(
     name: EventName,
@@ -186,6 +212,69 @@ export function forgetCurrentCode(): void {
   }
 }
 
+/* ── 开放模式辅助 ── */
+
+const BROWSER_SEQ_KEY = 'rongeheng_ab_browser_seq_v1';
+
+/**
+ * 这台浏览器提交的第几份作答。
+ *
+ * 开放模式取消了"一码一人"，同一台设备可以连续作答多次。这既是刻意放开的
+ * （课堂上传递同一台手机时必须如此），也带来了同一个人重复作答的风险。
+ * 记一个本地计数，让分析阶段至少能看见"有多少份来自重复作答的设备"。
+ *
+ * 这只是一个序号，不是设备指纹，也不跨站点、不跨浏览器，
+ * 清掉站点数据即归零。不记录 IP、设备型号或任何可识别个人的信息。
+ */
+export function bumpBrowserSubmissionSeq(): number {
+  try {
+    const next = Number(localStorage.getItem(BROWSER_SEQ_KEY) ?? '0') + 1;
+    localStorage.setItem(BROWSER_SEQ_KEY, String(next));
+    return next;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * 按两组当前人数做平衡分配（biased-coin）：少的那组优先，相等时随机。
+ *
+ * 定向模式下 A/B 平衡由码表保证（各 80 个）；开放模式没有码表，
+ * 纯随机在小样本下容易漂到 60/40，故改为每次都往人少的一组补。
+ */
+function assignBalancedVariant(participants: ParticipantRecord[]): Variant {
+  let a = 0;
+  let b = 0;
+  for (const p of participants) {
+    if (p.variant === 'A') a += 1;
+    else b += 1;
+  }
+  if (a < b) return 'A';
+  if (b < a) return 'B';
+  return Math.random() < 0.5 ? 'A' : 'B';
+}
+
+/** 撤回码字符集：去掉 0/O/1/I/L 这些抄写时容易混淆的字符。 */
+const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+
+/** 开放模式下自动生成的撤回码，形如 R-7K2M9Q。与已有码不重复。 */
+function generateWithdrawalCode(data: StoredData): string {
+  const used = new Set([
+    ...data.participants.map((p) => p.access_code_label),
+    ...ACCESS_CODE_LABELS,
+  ]);
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    let body = '';
+    for (let i = 0; i < 6; i += 1) {
+      body += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+    }
+    const label = `R-${body}`;
+    if (!used.has(label)) return label;
+  }
+  // 极低概率走到这里；退回带时间戳的写法，保证唯一
+  return `R-${Date.now().toString(36).toUpperCase()}`;
+}
+
 class LocalBackend implements DataBackend {
   readonly kind = 'local' as const;
 
@@ -236,6 +325,7 @@ class LocalBackend implements DataBackend {
       consent_at: now,
       created_at: now,
       baseline,
+      attention_check_passed: null,
     };
 
     const session: SessionRecord = {
@@ -248,6 +338,7 @@ class LocalBackend implements DataBackend {
       total_duration_ms: null,
       completion_status: 'in_progress',
       app_version: appVersion,
+      browser_submission_seq: 1,
     };
 
     data.participants.push(participant);
@@ -257,6 +348,67 @@ class LocalBackend implements DataBackend {
     rememberCurrentCode(row.code_label);
 
     return { participant, session, decisions: [] };
+  }
+
+  async startOpenSession(
+    baseline: BaselineAnswers,
+    consentVersion: string,
+    appVersion: string,
+  ): Promise<Progress> {
+    const data = read();
+    const now = new Date().toISOString();
+
+    const participant: ParticipantRecord = {
+      participant_id: uuid(),
+      access_code_label: generateWithdrawalCode(data),
+      variant: assignBalancedVariant(data.participants),
+      code_type: 'formal',
+      consent_version: consentVersion,
+      consent_at: now,
+      created_at: now,
+      baseline,
+      attention_check_passed: null,
+    };
+
+    const session: SessionRecord = {
+      session_id: uuid(),
+      participant_id: participant.participant_id,
+      variant: participant.variant,
+      scenario_order: shuffle(ALL_SCENARIO_IDS),
+      started_at: now,
+      completed_at: null,
+      total_duration_ms: null,
+      completion_status: 'in_progress',
+      app_version: appVersion,
+      browser_submission_seq: bumpBrowserSubmissionSeq(),
+    };
+
+    data.participants.push(participant);
+    data.sessions.push(session);
+    data.code_status[participant.access_code_label] = 'started';
+    write(data);
+    rememberCurrentCode(participant.access_code_label);
+
+    return { participant, session, decisions: [] };
+  }
+
+  async beginNewSubmission(): Promise<void> {
+    forgetCurrentCode();
+  }
+
+  async saveAttentionCheck(passed: boolean): Promise<void> {
+    const progress = await this.findMyProgress();
+    if (!progress) throw new Error('no_session');
+    const data = read();
+    const p = data.participants.find(
+      (x) => x.participant_id === progress.participant.participant_id,
+    );
+    if (!p) throw new Error('no_participant');
+    // 只写一次，防止刷新后覆盖首答
+    if (p.attention_check_passed === null || p.attention_check_passed === undefined) {
+      p.attention_check_passed = passed;
+      write(data);
+    }
   }
 
   async saveDecision(input: DecisionInput): Promise<DecisionRecord> {
@@ -281,9 +433,10 @@ class LocalBackend implements DataBackend {
       installment_term: input.installment_term,
       projected_min_balance: input.projected_min_balance,
       high_risk_choice: input.high_risk_choice,
-      viewed_cashflow: input.viewed_cashflow,
-      viewed_total_cost: input.viewed_total_cost,
-      clicked_lower_price: input.clicked_lower_price,
+      worst_balance_term: input.worst_balance_term,
+      high_risk_term: input.high_risk_term,
+      key_info_exposed: input.key_info_exposed,
+      key_info_exposed_ms: input.key_info_exposed_ms,
       changed_choice: input.changed_choice,
       decision_time_ms: input.decision_time_ms,
       submitted_at: new Date().toISOString(),
@@ -303,7 +456,12 @@ class LocalBackend implements DataBackend {
     }
 
     write(data);
-    if (done >= ALL_SCENARIO_IDS.length) forgetCurrentCode();
+    /*
+     * 定向模式下作答完成即忘掉这个码，共用设备时下一位可以直接输入自己的码。
+     * 开放模式相反：撤回码只在完成页出现这一次，忘掉就等于参与者再也无法要求删除自己的数据。
+     * 因此这里保留，改由「换一个人，再填一份」显式清除。
+     */
+    if (done >= ALL_SCENARIO_IDS.length && REQUIRE_ACCESS_CODE) forgetCurrentCode();
     return record;
   }
 
